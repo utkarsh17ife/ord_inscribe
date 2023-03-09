@@ -16,6 +16,8 @@ use {
   bitcoincore_rpc::bitcoincore_rpc_json::{ImportDescriptors, Timestamp},
   bitcoincore_rpc::Client,
   std::collections::BTreeSet,
+  img_parts::jpeg::Jpeg,
+  img_parts::ImageEXIF,
 };
 
 #[derive(Serialize)]
@@ -54,10 +56,15 @@ pub(crate) struct Inscribe {
   pub(crate) dry_run: bool,
   #[clap(long, help = "Send inscription to <DESTINATION>.")]
   pub(crate) destination: Option<Address>,
+  #[clap(long, help = "Additional metadata for the inscription in JSON format.")]
+  pub(crate) metadata: Option<String>,
 }
 
 impl Inscribe {
   pub(crate) fn run(self, options: Options) -> Result {
+    
+    Inscribe::set_metadata(&self);
+    
     let inscription = Inscription::from_file(options.chain(), &self.file)?;
 
     let index = Index::open(&options)?;
@@ -142,6 +149,17 @@ impl Inscribe {
       .sum::<u64>()
       .checked_sub(tx.output.iter().map(|txout| txout.value).sum::<u64>())
       .unwrap()
+  }
+
+  fn set_metadata(&self) {
+    if let Some(data) = &self.metadata {
+      let file = fs::read(&self.file).unwrap();
+      let mut jpeg = Jpeg::from_bytes(file.into()).unwrap();
+      let new_exif_data = data.to_string().into_bytes();
+      jpeg.set_exif(Some(new_exif_data.into()));
+      let ofile = File::create(&self.file);
+      jpeg.encoder().write_to(ofile.unwrap()).ok();
+    }
   }
 
   fn create_inscription_transactions(
